@@ -7,6 +7,9 @@ __pycache__/
 *.pyo
 *.pyd
 
+# Generated AES reports
+Enkripsi_AES_*/
+
 # Environment variables
 .env
 .env.*
