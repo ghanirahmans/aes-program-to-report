@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "report:ts": "tsx scripts/generate-report.ts"
+    "report:ts": "tsx src/scripts/generate-report.ts"
   },
   "repository": {
     "type": "git",
