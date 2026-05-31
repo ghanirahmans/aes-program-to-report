@@ -1,6 +1,10 @@
 import time
 from datetime import datetime
 import re
+import shutil
+import subprocess
+import zipfile
+from pathlib import Path
 
 # --- Inisialisasi Pustaka ---
 try:
@@ -13,12 +17,16 @@ except ImportError:
 
 try:
     import docx
-    from docx.shared import Pt, RGBColor
+    from docx.enum.section import WD_SECTION
+    from docx.enum.table import WD_TABLE_ALIGNMENT
+    from docx.shared import Inches, Pt, RGBColor
     from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
     DOCX_AVAILABLE = True
 except ImportError:
     DOCX_AVAILABLE = False
-    docx = Pt = WD_ALIGN_PARAGRAPH = RGBColor = None
+    docx = Inches = Pt = WD_ALIGN_PARAGRAPH = WD_TABLE_ALIGNMENT = RGBColor = WD_SECTION = OxmlElement = qn = None
 
 # --- Konstanta Inti AES ---
 S_BOX = (
@@ -45,6 +53,156 @@ MIX_COLUMNS_MATRIX = [[2, 3, 1, 1], [1, 2, 3, 1], [1, 1, 2, 3], [3, 1, 1, 2]]
 # --- Fungsi Pembantu untuk Output & Laporan ---
 def add_bold_paragraph(doc, text):
     if doc: p = doc.add_paragraph(); p.add_run(text).bold = True
+
+def set_section_narrow_margins(section):
+    section.top_margin = Inches(0.5)
+    section.bottom_margin = Inches(0.5)
+    section.left_margin = Inches(0.5)
+    section.right_margin = Inches(0.5)
+
+def set_narrow_margins(doc):
+    for section in doc.sections:
+        set_section_narrow_margins(section)
+
+def set_section_columns(section, column_count):
+    sect_pr = section._sectPr
+    cols = sect_pr.xpath("./w:cols")
+    cols = cols[0] if cols else OxmlElement("w:cols")
+    if cols.getparent() is None:
+        sect_pr.append(cols)
+    cols.set(qn("w:num"), str(column_count))
+    cols.set(qn("w:equalWidth"), "1")
+
+def start_two_column_section(doc):
+    section = doc.add_section(WD_SECTION.CONTINUOUS)
+    set_section_narrow_margins(section)
+    set_section_columns(section, 2)
+
+def format_compact_matrix_table(table):
+    cell_width = Inches(0.5)
+    width_twips = str(cell_width.twips)
+    table.autofit = False
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+
+    tbl_pr = table._tbl.tblPr
+    tbl_w = tbl_pr.find(qn("w:tblW"))
+    if tbl_w is None:
+        tbl_w = OxmlElement("w:tblW")
+        tbl_pr.append(tbl_w)
+    tbl_w.set(qn("w:type"), "dxa")
+    tbl_w.set(qn("w:w"), str(cell_width.twips * 4))
+
+    for grid_col in table._tbl.tblGrid.iterchildren():
+        grid_col.set(qn("w:w"), width_twips)
+
+    for row in table.rows:
+        for cell in row.cells:
+            cell.width = cell_width
+            tc_pr = cell._tc.get_or_add_tcPr()
+            tc_w = tc_pr.find(qn("w:tcW"))
+            if tc_w is None:
+                tc_w = OxmlElement("w:tcW")
+                tc_pr.append(tc_w)
+            tc_w.set(qn("w:type"), "dxa")
+            tc_w.set(qn("w:w"), width_twips)
+
+def sanitize_filename(value):
+    safe_value = re.sub(r"[^A-Za-z0-9._-]+", "_", value).strip("._-")
+    return safe_value or "output"
+
+def parse_aes_block_input(raw_value, label, encoding):
+    value = raw_value.strip()
+    if re.fullmatch(r"[0-9A-Fa-f]{32}", value):
+        block_bytes = bytes.fromhex(value)
+        return block_bytes.decode(encoding, errors="replace"), block_bytes.hex()
+
+    try:
+        block_bytes = value.encode(encoding)
+    except UnicodeEncodeError as exc:
+        raise ValueError(f"{label} tidak bisa dikonversi dengan encoding {encoding}") from exc
+
+    if len(block_bytes) != 16:
+        raise ValueError(f"{label} harus tepat 16 byte: teks 16 karakter ASCII atau hex 32 digit")
+
+    return value, block_bytes.hex()
+
+def clear_document_metadata(doc):
+    core_properties = doc.core_properties
+    for attr in (
+        "author",
+        "category",
+        "comments",
+        "content_status",
+        "identifier",
+        "keywords",
+        "language",
+        "last_modified_by",
+        "subject",
+        "title",
+        "version",
+    ):
+        try:
+            setattr(core_properties, attr, "")
+        except AttributeError:
+            pass
+    core_properties.revision = 1
+
+def strip_docx_metadata(docx_path):
+    empty_core_properties = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+        '<cp:coreProperties '
+        'xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" '
+        'xmlns:dc="http://purl.org/dc/elements/1.1/" '
+        'xmlns:dcterms="http://purl.org/dc/terms/" '
+        'xmlns:dcmitype="http://purl.org/dc/dcmitype/" '
+        'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"/>'
+    ).encode("utf-8")
+    empty_app_properties = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+        '<Properties '
+        'xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" '
+        'xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"/>'
+    ).encode("utf-8")
+
+    temp_path = docx_path.with_suffix(".tmp.docx")
+    fixed_timestamp = (1980, 1, 1, 0, 0, 0)
+
+    with zipfile.ZipFile(docx_path, "r") as source:
+        with zipfile.ZipFile(temp_path, "w", compression=zipfile.ZIP_DEFLATED) as target:
+            for item in source.infolist():
+                data = source.read(item.filename)
+                if item.filename == "docProps/core.xml":
+                    data = empty_core_properties
+                elif item.filename == "docProps/app.xml":
+                    data = empty_app_properties
+
+                clean_item = zipfile.ZipInfo(item.filename, fixed_timestamp)
+                clean_item.compress_type = zipfile.ZIP_DEFLATED
+                clean_item.external_attr = item.external_attr
+                target.writestr(clean_item, data)
+
+    temp_path.replace(docx_path)
+
+def convert_docx_to_pdf(docx_path, output_dir):
+    converter = shutil.which("libreoffice") or shutil.which("soffice")
+    if not converter:
+        raise RuntimeError("LibreOffice tidak ditemukan, PDF tidak bisa dibuat otomatis.")
+
+    subprocess.run(
+        [
+            converter,
+            "--headless",
+            "--convert-to",
+            "pdf",
+            "--outdir",
+            str(output_dir),
+            str(docx_path),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return docx_path.with_suffix(".pdf")
 
 def add_calculation_paragraph(doc, text, indent=False):
     if doc:
@@ -93,6 +251,7 @@ def add_matrix_to_doc(doc, label, hex_string):
     if doc:
         p = doc.add_paragraph(); p.add_run(label).italic = True; font=p.runs[0].font; font.name='Times New Roman'; font.size=Pt(12)
         table = doc.add_table(rows=4, cols=4); table.style = 'Table Grid'
+        format_compact_matrix_table(table)
         bytes_array = [hex_string[i:i+2] for i in range(0, len(hex_string), 2)]
         for r in range(4):
             for c in range(4):
@@ -103,6 +262,7 @@ def add_constant_matrix_to_doc(doc, label, matrix):
     if doc:
         p = doc.add_paragraph(); p.add_run(label).italic = True; font=p.runs[0].font; font.name='Times New Roman'; font.size=Pt(12)
         table = doc.add_table(rows=4, cols=4); table.style = 'Table Grid'
+        format_compact_matrix_table(table)
         for r in range(4):
             for c in range(4):
                 cell = table.cell(r, c)
@@ -253,7 +413,9 @@ def explain_gmul_poly(a, b, doc):
 # --- FUNGSI YANG DIUBAH ---
 def key_schedule_explain(initial_key_hex, doc):
     print(f"\n{Fore.YELLOW}===== PROSES KEY SCHEDULE (Ekspansi Kunci) =====");
-    if doc: doc.add_heading("Proses Key Schedule (Ekspansi Kunci)", level=2)
+    if doc:
+        start_two_column_section(doc)
+        doc.add_heading("Proses Key Schedule (Ekspansi Kunci)", level=2)
     initial_key_bytes = bytearray.fromhex(initial_key_hex); round_keys_bytes = [initial_key_bytes]
     print_matrix("Kunci Awal (Round 0)", initial_key_hex); add_matrix_to_doc(doc, "Kunci Awal (Round 0)", initial_key_hex)
     time.sleep(0.1)
@@ -434,21 +596,23 @@ def aes_full_process():
         print(f"{Fore.RED}ERROR: Library 'python-docx' tidak ditemukan.\n{Fore.YELLOW}Silakan instal dengan menjalankan: pip install python-docx")
         return
     try:
-        plaintext_txt = input("Masukkan plaintext (teks 16 karakter): ")
-        if len(plaintext_txt) != 16: raise ValueError("Plaintext harus tepat 16 karakter")
-        kunci_txt = input("Masukkan Kunci Utama (teks 16 karakter): ")
-        if len(kunci_txt) != 16: raise ValueError("Kunci harus tepat 16 karakter")
-        
-        today_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        nama_file_laporan = f'Enkripsi_AES_{plaintext_txt.replace(" ", "_")}_{today_str}.docx'
+        plaintext_input = input("Masukkan plaintext (teks 16 karakter atau hex 32 digit): ")
+        plaintext_txt, plaintext_hex = parse_aes_block_input(plaintext_input, "Plaintext", "windows-1252")
+        kunci_input = input("Masukkan Kunci Utama (teks 16 karakter atau hex 32 digit): ")
+        kunci_txt, kunci_hex = parse_aes_block_input(kunci_input, "Kunci", "windows-1252")
         
         doc = docx.Document()
+        set_narrow_margins(doc)
         style = doc.styles['Normal']; font = style.font; font.name = 'Times New Roman'; font.size = Pt(12)
         font.color.rgb = RGBColor(0,0,0)
         for i in range(1, 4):
             style = doc.styles[f'Heading {i}']; font = style.font; font.name = 'Times New Roman'; font.color.rgb = RGBColor(0,0,0)
 
-        plaintext_hex, kunci_hex = plaintext_txt.encode('utf-8').hex(), kunci_txt.encode('utf-8').hex()
+        today_str = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        output_name = f"Enkripsi_AES_{sanitize_filename(plaintext_txt)}_{today_str}"
+        output_dir = Path(output_name)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        docx_path = output_dir / f"{output_name}.docx"
 
         doc.add_heading(f'Tugas Enkripsi AES {plaintext_txt}', level=1)
         p = doc.add_paragraph(); p.add_run('///\nPlaintext: ').bold = True; run_p = p.add_run(f"{plaintext_txt} ({plaintext_hex.upper()})"); run_p.font.name = 'Times New Roman'; run_p.font.size = Pt(12)
@@ -508,8 +672,13 @@ def aes_full_process():
             p = doc.add_paragraph(); p.add_run('Representasi Biner: ').bold = True
             p.add_run(final_binary_str).font.name = 'Times New Roman'
             
-        doc.save(nama_file_laporan)
-        print(f"\n{Fore.GREEN}Laporan berhasil dibuat dan disimpan sebagai '{nama_file_laporan}'")
+        clear_document_metadata(doc)
+        doc.save(docx_path)
+        strip_docx_metadata(docx_path)
+        pdf_path = convert_docx_to_pdf(docx_path, output_dir)
+        print(f"\n{Fore.GREEN}Folder hasil dibuat: '{output_dir}'")
+        print(f"{Fore.GREEN}DOCX: '{docx_path}'")
+        print(f"{Fore.GREEN}PDF : '{pdf_path}'")
 
     except ValueError as e: print(f"\n{Fore.RED}Error: {e}")
     except Exception as e: print(f"\n{Fore.RED}Terjadi kesalahan tak terduga: {e}")
