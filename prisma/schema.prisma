@@ -1,0 +1,30 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model License {
+  id        String        @id @default(cuid())
+  email     String
+  tokenHash String        @unique
+  status    LicenseStatus @default(UNUSED)
+  orderId   String        @unique
+  createdAt DateTime      @default(now())
+  usedAt    DateTime?
+  expiresAt DateTime
+
+  @@map("licenses")
+}
+
+enum LicenseStatus {
+  UNUSED
+  USED
+  EXPIRED
+  REVOKED
+}

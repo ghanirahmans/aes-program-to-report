@@ -22,18 +22,28 @@
   },
   "homepage": "https://github.com/ghanirahmans/aes-program-to-report#readme",
   "dependencies": {
+    "@prisma/adapter-pg": "^7.8.0",
+    "@prisma/client": "^7.8.0",
     "adm-zip": "^0.5.17",
     "docx": "^9.7.1",
+    "dotenv": "^17.4.2",
     "iconv-lite": "^0.7.2",
     "next": "^16.2.6",
+    "nodemailer": "^8.0.10",
+    "pg": "^8.21.0",
     "react": "^19.2.6",
-    "react-dom": "^19.2.6"
+    "react-dom": "^19.2.6",
+    "resend": "^6.12.4",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/adm-zip": "^0.5.8",
     "@types/node": "^25.9.1",
+    "@types/nodemailer": "^8.0.0",
+    "@types/pg": "^8.20.0",
     "@types/react": "^19.2.15",
     "@types/react-dom": "^19.2.3",
+    "prisma": "^7.8.0",
     "tsx": "^4.22.4",
     "typescript": "^6.0.3"
   }

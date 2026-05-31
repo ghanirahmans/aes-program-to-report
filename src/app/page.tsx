@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { processAes, type AesActionResult } from "./actions";
 
 // Real-time conversion helper utilities
@@ -42,6 +43,8 @@ interface PlaybackItem extends TerminalLine {
 }
 
 export default function Home() {
+  const [licenseToken, setLicenseToken] = useState("");
+  
   // Master states containing raw text and hex values
   const [plainText, setPlainText] = useState("KeamananInformas");
   const [plainHex, setPlainHex] = useState(textToHex("KeamananInformas"));
@@ -114,7 +117,8 @@ export default function Home() {
 
   const isPlaintextValid = plainBytesCount === 16;
   const isKeyValid = keyBytesCount === 16;
-  const canProcess = isPlaintextValid && isKeyValid && !isProcessing;
+  const isTokenFormatValid = licenseToken.length === 16 && /^[A-Z0-9]+$/.test(licenseToken);
+  const canProcess = isPlaintextValid && isKeyValid && isTokenFormatValid && !isProcessing;
 
   // Function to determine log type and raw delay
   const parseLogLine = (line: string): PlaybackItem => {
@@ -163,11 +167,47 @@ export default function Home() {
     setProgress(0);
     setActionResult(null);
     setTerminalLines([
-      { text: "guest@aes-security:~$ ./aes_encrypt_engine --input=" + plainText + " --key=" + keyText, type: "info" },
-      { text: "[SYSTEM] Memanggil server untuk melakukan enkripsi AES dan membuat laporan...", type: "info" },
+      { text: "guest@aes-security:~$ ./aes_encrypt_engine --input=" + plainText + " --key=" + keyText + " --token=" + licenseToken, type: "info" },
+      { text: "[SYSTEM] Memverifikasi token lisensi di database...", type: "info" },
     ]);
 
-    // Call Next.js Server Action
+    // 1. Verify License Token by calling the API route
+    try {
+      const activateRes = await fetch("/api/license/activate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ token: licenseToken }),
+      });
+
+      const activateData = await activateRes.json();
+
+      if (!activateRes.ok || !activateData.success) {
+        setTerminalLines((prev) => [
+          ...prev,
+          { text: `[ERROR] Gagal memverifikasi token: ${activateData.message || "Token tidak valid atau sudah digunakan!"}`, type: "error" },
+          { text: `[SYSTEM] Proses dihentikan. Silakan beli token baru.`, type: "error" },
+        ]);
+        setIsProcessing(false);
+        return;
+      }
+
+      setTerminalLines((prev) => [
+        ...prev,
+        { text: `[SUCCESS] Token terverifikasi! Status berubah menjadi USED di database secara atomic.`, type: "success" },
+        { text: `[SYSTEM] Memulai pemanggilan mesin enkripsi AES...`, type: "info" },
+      ]);
+    } catch (err: any) {
+      setTerminalLines((prev) => [
+        ...prev,
+        { text: `[ERROR] Kesalahan jaringan saat menghubungi server lisensi.`, type: "error" },
+      ]);
+      setIsProcessing(false);
+      return;
+    }
+
+    // 2. Call Next.js Server Action
     const res = await processAes(plainText, keyText);
 
     if (!res.success || !res.logs) {
@@ -416,6 +456,37 @@ export default function Home() {
               </span>
               <span className={`status-badge ${isKeyValid ? "valid" : "invalid"}`}>
                 {isKeyValid ? "✔ 16 Byte" : `${keyBytesCount} / 16 Byte`}
+              </span>
+            </div>
+          </div>
+
+          {/* License Token Input Group */}
+          <div className="input-group" style={{ gridColumn: "1 / -1", borderTop: "1px dashed rgba(255, 255, 255, 0.05)", paddingTop: "1.25rem" }}>
+            <div className="label-row">
+              <span className="label-text" style={{ color: "var(--accent-cyan)" }}>Token Lisensi Kriptografi (Sekali Pakai)</span>
+              <span className="status-badge">
+                <Link href="/buy-token" style={{ color: "var(--accent-purple)", textDecoration: "none", fontWeight: 600 }}>
+                  Belum punya token? Beli di sini &rarr;
+                </Link>
+              </span>
+            </div>
+            <div className="input-wrapper">
+              <input
+                type="text"
+                className="input-field"
+                placeholder="Masukkan 16 karakter token (Contoh: X9K2M7PQ4L8RD3WT)..."
+                style={{ borderColor: licenseToken && !isTokenFormatValid ? "var(--accent-amber)" : isTokenFormatValid ? "var(--accent-emerald)" : "" }}
+                value={licenseToken}
+                onChange={(e) => setLicenseToken(e.target.value.toUpperCase().trim())}
+                disabled={isProcessing}
+              />
+            </div>
+            <div className="label-row" style={{ marginTop: "-0.2rem" }}>
+              <span className="status-badge" style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                Satu token hanya dapat digunakan untuk memproses satu kali enkripsi.
+              </span>
+              <span className={`status-badge ${isTokenFormatValid ? "valid" : "invalid"}`}>
+                {isTokenFormatValid ? "✔ Format Valid" : `${licenseToken.length} / 16 Karakter`}
               </span>
             </div>
           </div>
