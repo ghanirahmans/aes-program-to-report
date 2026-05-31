@@ -1,0 +1,40 @@
+{
+  "name": "program",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "report:ts": "tsx scripts/generate-report.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ghanirahmans/aes-program-to-report.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/ghanirahmans/aes-program-to-report/issues"
+  },
+  "homepage": "https://github.com/ghanirahmans/aes-program-to-report#readme",
+  "dependencies": {
+    "adm-zip": "^0.5.17",
+    "docx": "^9.7.1",
+    "iconv-lite": "^0.7.2",
+    "next": "^16.2.6",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6"
+  },
+  "devDependencies": {
+    "@types/adm-zip": "^0.5.8",
+    "@types/node": "^25.9.1",
+    "@types/react": "^19.2.15",
+    "@types/react-dom": "^19.2.3",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3"
+  }
+}
