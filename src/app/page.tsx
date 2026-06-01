@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { processAes, type AesActionResult } from "./actions";
+import { processAes, convertDocxToPdfAction, type AesActionResult } from "./actions";
 
 // Real-time conversion helper utilities
 function textToHex(text: string): string {
@@ -68,6 +68,7 @@ export default function Home() {
 
   // Server result state
   const [actionResult, setActionResult] = useState<AesActionResult | null>(null);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
   // Playback queue & index
   const [playbackQueue, setPlaybackQueue] = useState<PlaybackItem[]>([]);
@@ -297,9 +298,39 @@ export default function Home() {
   }, [isPlaying, playbackQueue, currentQueueIndex, speedMode]);
 
   // Client-side download handlers
-  const handleDownload = (type: "pdf" | "docx") => {
+  const handleDownload = async (type: "pdf" | "docx" | "zip") => {
     if (!actionResult) return;
-    const base64 = type === "docx" ? actionResult.docxBase64 : actionResult.pdfBase64;
+
+    let base64 = 
+      type === "docx" ? actionResult.docxBase64 : 
+      type === "pdf" ? actionResult.pdfBase64 : 
+      actionResult.zipBase64;
+
+    if (type === "pdf" && !base64) {
+      if (!actionResult.docxBase64) {
+        alert("Berkas Word (DOCX) tidak tersedia untuk membuat PDF.");
+        return;
+      }
+
+      setIsGeneratingPdf(true);
+      try {
+        const res = await convertDocxToPdfAction(actionResult.docxBase64);
+        if (res.success && res.pdfBase64) {
+          base64 = res.pdfBase64;
+          // Cache the generated PDF base64 inside the state so next time is instant
+          setActionResult((prev) => (prev ? { ...prev, pdfBase64: res.pdfBase64 } : null));
+        } else {
+          alert(`Gagal mengonversi ke PDF: ${res.error || "Unknown error"}`);
+          return;
+        }
+      } catch (err) {
+        alert("Terjadi kesalahan jaringan saat mencoba mengonversi PDF.");
+        return;
+      } finally {
+        setIsGeneratingPdf(false);
+      }
+    }
+
     if (!base64) {
       alert(`Berkas ${type.toUpperCase()} tidak tersedia.`);
       return;
@@ -308,6 +339,7 @@ export default function Home() {
     const mimeMap = {
       docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       pdf: "application/pdf",
+      zip: "application/zip",
     };
 
     const filename = `Laporan_AES_${plainText.replace(/[^A-Za-z0-9]/g, "_")}.${type}`;
@@ -641,14 +673,48 @@ export default function Home() {
               </svg>
               <span>Laporan Word (.docx)</span>
             </button>
-            <button className="btn-download pdf" onClick={() => handleDownload("pdf")}>
+            <button className="btn-download pdf" onClick={() => handleDownload("pdf")} disabled={isGeneratingPdf}>
+              {isGeneratingPdf ? (
+                <>
+                  <svg
+                    style={{ animation: "spin 1s linear infinite", width: 15, height: 15, marginRight: 6 }}
+                    viewBox="0 0 24 24"
+                    fill="none"
+                  >
+                    <circle
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                      style={{ opacity: 0.25 }}
+                    />
+                    <path
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    />
+                  </svg>
+                  <span>Membuat PDF...</span>
+                </>
+              ) : (
+                <>
+                  <svg style={{ width: 15, height: 15 }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                    <line x1="16" y1="13" x2="8" y2="13" />
+                    <line x1="16" y1="17" x2="8" y2="17" />
+                  </svg>
+                  <span>Laporan PDF (.pdf)</span>
+                </>
+              )}
+            </button>
+            <button className="btn-download zip" onClick={() => handleDownload("zip")}>
               <svg style={{ width: 15, height: 15 }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                <polyline points="14 2 14 8 20 8" />
-                <line x1="16" y1="13" x2="8" y2="13" />
-                <line x1="16" y1="17" x2="8" y2="17" />
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                <path d="M12 11v6" />
+                <path d="m9 14 3 3 3-3" />
               </svg>
-              <span>Laporan PDF (.pdf)</span>
+              <span>Arsip ZIP (.zip)</span>
             </button>
           </div>
         </section>

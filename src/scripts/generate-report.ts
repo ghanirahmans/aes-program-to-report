@@ -7,7 +7,7 @@ if (!plaintext || !key) {
   process.exit(1);
 }
 
-generateAesReport({ plaintext, key })
+generateAesReport({ plaintext, key, generatePdf: true })
   .then((result) => {
     console.log(`\nFolder hasil dibuat: '${result.outputDir}'`);
     console.log(`DOCX: '${result.docxPath}'`);

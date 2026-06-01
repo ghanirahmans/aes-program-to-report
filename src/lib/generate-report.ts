@@ -11,6 +11,7 @@ export type GenerateReportOptions = {
   outputRoot?: string;
   logger?: ReportLogger;
   timestamp?: Date;
+  generatePdf?: boolean;
 };
 
 export type GenerateReportResult = {
@@ -22,7 +23,7 @@ export type GenerateReportResult = {
   binary: string;
   outputDir: string;
   docxPath: string;
-  pdfPath: string;
+  pdfPath?: string;
 };
 
 export async function generateAesReport(options: GenerateReportOptions): Promise<GenerateReportResult> {
@@ -65,7 +66,11 @@ export async function generateAesReport(options: GenerateReportOptions): Promise
   report.addCalculationParagraph(`Representasi Biner: ${binary}`);
 
   await report.save(docxPath);
-  const pdfPath = convertDocxToPdf(docxPath, outputDir);
+
+  let pdfPath: string | undefined;
+  if (options.generatePdf) {
+    pdfPath = convertDocxToPdf(docxPath, outputDir);
+  }
 
   return {
     plaintextText: plaintext.text,

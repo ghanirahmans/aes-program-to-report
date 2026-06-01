@@ -593,6 +593,11 @@ body {
   box-shadow: 0 0 10px rgba(239, 68, 68, 0.1);
 }
 
+.btn-download.zip:hover {
+  border-color: var(--accent-purple);
+  box-shadow: 0 0 10px rgba(139, 92, 246, 0.1);
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;

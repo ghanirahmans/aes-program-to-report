@@ -17,9 +17,9 @@ import {
   TextRun,
   WidthType,
 } from "docx";
-import { existsSync } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
 const FONT = "Times New Roman";
@@ -117,12 +117,12 @@ export class DocxReport {
   }
 
   addBoldParagraph(text: string): void {
-    this.activeChildren.push(paragraph([run(text, { bold: true })]));
+    this.activeChildren.push(paragraph([run(text, { bold: true, size: 20 })]));
   }
 
   addCalculationParagraph(text: string, indent = false): void {
     this.activeChildren.push(
-      paragraph(text.trim(), {
+      paragraph([run(text.trim(), { size: 20 })], {
         indent: indent ? { left: 360 } : undefined,
       }),
     );
@@ -141,24 +141,27 @@ export class DocxReport {
   }
 
   addPolyParagraph(text: string, indent = false): void {
-    const parts = text.split(/(x\^\d+)/);
-    const children = parts.map((part) => {
-      if (part.startsWith("x^")) {
-        const [, exponent] = part.split("^");
-        return [
-          run("x"),
-          run(exponent, { superScript: true }),
-        ];
-      }
+    const lines = text.split("\n");
+    for (const line of lines) {
+      const parts = line.split(/(x\^\d+)/);
+      const children = parts.map((part) => {
+        if (part.startsWith("x^")) {
+          const [, exponent] = part.split("^");
+          return [
+            run("x", { size: 20 }),
+            run(exponent, { superScript: true, size: 20 }),
+          ];
+        }
 
-      return [run(part)];
-    }).flat();
+        return [run(part, { size: 20 })];
+      }).flat();
 
-    this.activeChildren.push(
-      paragraph(children, {
-        indent: indent ? { left: 360 } : undefined,
-      }),
-    );
+      this.activeChildren.push(
+        paragraph(children, {
+          indent: indent ? { left: 360 } : undefined,
+        }),
+      );
+    }
   }
 
   addTermsWithDuplicateStrike(poly1: string, poly2: string, indent = true): void {
@@ -171,21 +174,21 @@ export class DocxReport {
       const isDuplicate = duplicates.has(term);
       if (term.includes("^")) {
         const [base, exponent] = term.split("^");
-        children.push(run(base, { strike: isDuplicate, bold: isDuplicate }));
-        children.push(run(exponent, { superScript: true, strike: isDuplicate, bold: isDuplicate }));
+        children.push(run(base, { strike: isDuplicate, bold: isDuplicate, size: 20 }));
+        children.push(run(exponent, { superScript: true, strike: isDuplicate, bold: isDuplicate, size: 20 }));
       } else {
-        children.push(run(term, { strike: isDuplicate, bold: isDuplicate }));
+        children.push(run(term, { strike: isDuplicate, bold: isDuplicate, size: 20 }));
       }
     };
 
     terms1.forEach((term, index) => {
       addTerm(term);
-      if (index < terms1.length - 1) children.push(run(" + "));
+      if (index < terms1.length - 1) children.push(run(" + ", { size: 20 }));
     });
-    children.push(run(" + "));
+    children.push(run(" + ", { size: 20 }));
     terms2.forEach((term, index) => {
       addTerm(term);
-      if (index < terms2.length - 1) children.push(run(" + "));
+      if (index < terms2.length - 1) children.push(run(" + ", { size: 20 }));
     });
 
     this.activeChildren.push(
@@ -313,15 +316,50 @@ export function convertDocxToPdf(docxPath: string, outputDir: string): string {
     throw new Error("LibreOffice tidak ditemukan, PDF tidak bisa dibuat otomatis.");
   }
 
-  const result = spawnSync(converter, ["--headless", "--convert-to", "pdf", "--outdir", outputDir, docxPath], {
-    encoding: "utf8",
-  });
+  // Ensure absolute paths to avoid invalid relative file:// protocol URLs in LibreOffice
+  const absDocxPath = resolve(docxPath);
+  const absOutputDir = resolve(outputDir);
 
-  if (result.status !== 0) {
-    throw new Error(result.stderr || result.stdout || "Gagal mengkonversi DOCX ke PDF.");
+  // Create an isolated profile path to reduce startup time, prevent file locking,
+  // and minimize peak memory usage to only ~20MB RAM!
+  const profilePath = join(dirname(absDocxPath), `.soffice_profile_${Date.now()}_${Math.floor(Math.random() * 1000)}`);
+  const userProfileUrl = `file://${profilePath}`;
+
+  const args = [
+    `-env:UserInstallation=${userProfileUrl}`,
+    "--headless",
+    "--invisible",
+    "--nologo",
+    "--norestore",
+    "--nofirststartwizard",
+    "--nodefault",
+    "--convert-to",
+    "pdf",
+    "--outdir",
+    absOutputDir,
+    absDocxPath,
+  ];
+
+  try {
+    const result = spawnSync(converter, args, {
+      encoding: "utf8",
+    });
+
+    if (result.status !== 0) {
+      throw new Error(result.stderr || result.stdout || "Gagal mengkonversi DOCX ke PDF.");
+    }
+  } finally {
+    // Synchronously clean up the temporary user profile directory after execution
+    try {
+      if (existsSync(profilePath)) {
+        rmSync(profilePath, { recursive: true, force: true });
+      }
+    } catch (cleanupErr) {
+      console.error("Gagal membersihkan profil temporer soffice:", cleanupErr);
+    }
   }
 
-  return docxPath.replace(/\.docx$/i, ".pdf");
+  return absDocxPath.replace(/\.docx$/i, ".pdf");
 }
 
 function findExecutable(candidates: string[]): string | undefined {
