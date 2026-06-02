@@ -26,3 +26,7 @@ Enkripsi_AES_*/
 
 # OS
 .DS_Store
+
+# Temporary outputs and scratch files
+scratch/
+tmp_reports/

@@ -6,9 +6,7 @@ import Link from "next/link";
 
 /**
  * BuyTokenPage component.
- * Allows users to simulate checking out and purchasing an AES license token.
- * Generates tokens in real time on the server, logs email delivery, and presents
- * the token with single-click clipboard copying.
+ * Redesigned into a beautiful SaaS check-out pricing system.
  */
 export default function BuyTokenPage() {
   const [email, setEmail] = useState("");
@@ -21,9 +19,12 @@ export default function BuyTokenPage() {
   const [copied, setCopied] = useState(false);
   const [isMidtransProcessing, setIsMidtransProcessing] = useState(false);
 
+  // Strict email regex validation matching standard domains
+  const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
   const handleBuy = async () => {
-    if (!email || !email.includes("@") || email.length < 5) {
-      alert("Silakan masukkan email yang valid.");
+    if (!EMAIL_REGEX.test(email)) {
+      alert("Silakan masukkan email dengan format yang benar (contoh: nama@domain.com).");
       return;
     }
 
@@ -45,8 +46,8 @@ export default function BuyTokenPage() {
   };
 
   const handleMidtransPay = async () => {
-    if (!email || !email.includes("@") || email.length < 5) {
-      alert("Silakan masukkan email yang valid.");
+    if (!EMAIL_REGEX.test(email)) {
+      alert("Silakan masukkan email dengan format yang benar (contoh: nama@domain.com).");
       return;
     }
 
@@ -54,7 +55,7 @@ export default function BuyTokenPage() {
     try {
       const res = await createMidtransTransaction(email);
       if (res.success && res.redirectUrl) {
-        // Redirect the user to the dynamically generated unique Midtrans Sandbox checkout URL!
+        // Redirect the user to the Midtrans sandbox checkout
         window.location.href = res.redirectUrl;
       } else {
         alert(res.error || "Gagal membuat sesi pembayaran dengan Midtrans.");
@@ -74,92 +75,86 @@ export default function BuyTokenPage() {
     }
   };
 
+  const isEmailValid = EMAIL_REGEX.test(email);
+
   return (
-    <div className="app-container" style={{ maxWidth: "600px", marginTop: "1rem" }}>
+    <div className="app-container" style={{ maxWidth: "800px" }}>
       <header className="header">
-        <h1>Beli Token Lisensi</h1>
+        <h1>Dapatkan Token Lisensi Enkripsi</h1>
         <p>
-          Beli token lisensi resmi sekali pakai untuk melakukan visualisasi enkripsi AES dan mengunduh laporan perhitungan tugas Anda.
+          Beli token lisensi resmi sekali pakai untuk melakukan enkripsi AES-128 secara penuh
+          dan mengunduh laporan perhitungan akademik Anda secara instan.
         </p>
       </header>
 
       {!purchaseResult?.success ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-          {/* Consolidated Email Input Card */}
-          <section className="card" style={{ animation: "fadeIn 0.3s ease", padding: "1.25rem" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "2rem", animation: "fadeIn 0.4s ease" }}>
+
+          {/* Email Setup Card */}
+          <section className="card" aria-labelledby="email-setup-title">
+            <h2 id="email-setup-title" style={{ display: "none" }}>Email Pengiriman</h2>
             <div className="input-group" style={{ margin: 0 }}>
-              <label className="label-text" htmlFor="email-checkout" style={{ fontSize: "0.85rem", fontWeight: 600 }}>
-                Alamat Email Anda
-              </label>
-              <div className="input-wrapper" style={{ marginTop: "0.4rem" }}>
+              <div className="label-row">
+                <label className="label-text" htmlFor="email-checkout">
+                  Alamat Email Penerima Token
+                </label>
+                <span className={`status-badge ${isEmailValid ? "valid" : "invalid"}`} aria-live="polite">
+                  {isEmailValid ? "✔ Email Valid" : "Masukkan email yang valid"}
+                </span>
+              </div>
+              <div className="input-wrapper" style={{ marginTop: "0.5rem" }}>
                 <input
                   id="email-checkout"
                   type="email"
                   required
-                  placeholder="name@example.com"
+                  placeholder="nama@email.com"
                   className="input-field"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   disabled={isProcessing || isMidtransProcessing}
                 />
               </div>
-              <span className="status-badge" style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: "0.4rem", display: "inline-block" }}>
-                Email ini wajib diisi secara valid karena digunakan untuk mengirimkan token lisensi Anda.
+              <span className="status-badge" style={{ fontSize: "0.75rem", marginTop: "0.5rem" }}>
+                PENTING: Pastikan email aktif. Kunci token lisensi unik akan otomatis dikirimkan langsung ke email ini.
               </span>
             </div>
           </section>
 
-          {/* Official Midtrans Payment Gateway Section */}
-          <section className="card" style={{
-            border: "1px solid rgba(6, 182, 212, 0.3)",
-            boxShadow: "0 0 20px rgba(6, 182, 212, 0.05)",
-            background: "linear-gradient(to bottom, rgba(8, 11, 17, 0.8), rgba(6, 182, 212, 0.02))",
-            animation: "fadeIn 0.3s ease"
-          }}>
-            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{
-                  background: "rgba(6, 182, 212, 0.08)",
-                  border: "1px solid var(--accent-cyan)",
-                  color: "var(--accent-cyan)",
-                  fontSize: "0.68rem",
-                  fontWeight: 700,
-                  letterSpacing: "0.06em",
-                  padding: "0.25rem 0.6rem",
-                  borderRadius: "4px",
-                  textTransform: "uppercase"
-                }}>
-                  Rekomendasi (Resmi)
-                </span>
-                <span style={{ color: "var(--accent-cyan)", fontWeight: 700, fontSize: "1.1rem" }}>
-                  Rp 15.000
-                </span>
-              </div>
-
+          {/* Centered Pricing Card */}
+          <div style={{ display: "flex", justifyContent: "center", width: "100%", marginTop: "1rem" }}>
+            {/* Midtrans Secure Gateway Option */}
+            <section className="pricing-card recommended" aria-labelledby="midtrans-gateway-title" style={{ maxWidth: "500px", width: "100%" }}>
+              <span className="pricing-badge">Rekomendasi</span>
               <div>
-                <h3 style={{ color: "#ffffff", fontSize: "1.1rem", fontWeight: 700, marginBottom: "0.3rem" }}>
-                  Metode Pembayaran Midtrans Snap (Sesi Unik)
+                <h3 id="midtrans-gateway-title" style={{ color: "#ffffff", fontSize: "1.2rem", fontWeight: 800, marginBottom: "0.5rem" }}>
+                  Midtrans Secure Pay
                 </h3>
-                <p style={{ color: "var(--text-muted)", fontSize: "0.8rem", lineHeight: 1.4 }}>
-                  Buat sesi pembayaran aman instan di mana Midtrans akan men-generate QRIS, GoPay, ShopeePay, Transfer Bank, dll. unik untuk Anda.
+                <div style={{ display: "flex", alignItems: "baseline", gap: "4px", margin: "1rem 0" }}>
+                  <span style={{ fontSize: "1.8rem", fontWeight: 800, color: "var(--accent-cyan)" }}>Rp 82.000</span>
+                  <span style={{ color: "var(--text-muted)", fontSize: "0.8rem" }}>/ 1 Token</span>
+                </div>
+                <p style={{ color: "var(--text-secondary)", fontSize: "0.85rem", lineHeight: 1.5, marginBottom: "1.5rem" }}>
+                  Buat sesi pembayaran aman secara real-time dengan Midtrans Gateway. Anda dapat membayar menggunakan QRIS, GoPay, ShopeePay, Transfer Bank, dll. secara instan.
                 </p>
+                <ul style={{ color: "var(--text-secondary)", fontSize: "0.8rem", display: "flex", flexDirection: "column", gap: "8px", paddingLeft: "1.2rem", marginBottom: "2rem" }}>
+                  <li>Konfirmasi Otomatis Real-time</li>
+                  <li>Token Dikirim Otomatis ke Email</li>
+                  <li>Mendukung Unduhan PDF & Word Laporan</li>
+                  <li>Status Atomic Lock Database</li>
+                </ul>
               </div>
 
-              <div className="button-container" style={{ marginTop: "0.25rem" }}>
+              <div className="button-container" style={{ marginTop: "auto" }}>
                 <button
                   type="button"
                   onClick={handleMidtransPay}
-                  className="btn-process"
-                  style={{ width: "100%", justifyContent: "center", display: "inline-flex", gap: "0.5rem" }}
-                  disabled={isProcessing || isMidtransProcessing || !email.includes("@")}
+                  className="btn-process btn-midtrans"
+                  style={{ width: "100%" }}
+                  disabled={isProcessing || isMidtransProcessing || !isEmailValid}
                 >
                   {isMidtransProcessing ? (
                     <>
-                      <svg
-                        style={{ animation: "spin 1s linear infinite", width: 16, height: 16 }}
-                        viewBox="0 0 24 24"
-                        fill="none"
-                      >
+                      <svg style={{ animation: "spin 1s linear infinite", width: 16, height: 16 }} viewBox="0 0 24 24" fill="none">
                         <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" style={{ opacity: 0.25 }} />
                         <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                       </svg>
@@ -171,163 +166,115 @@ export default function BuyTokenPage() {
                         <rect x="2" y="5" width="20" height="14" rx="2" />
                         <line x1="2" y1="10" x2="22" y2="10" />
                       </svg>
-                      <span>Bayar dengan Midtrans Sandbox &rarr;</span>
+                      <span>Bayar Aman via Midtrans</span>
                     </>
                   )}
                 </button>
               </div>
-            </div>
-          </section>
+            </section>
+          </div>
 
-          {/* Simulated Local Checkout Section */}
-          <section className="card" style={{
-            border: "1px solid rgba(255, 255, 255, 0.03)",
-            background: "rgba(0, 0, 0, 0.15)",
-            animation: "fadeIn 0.3s ease"
-          }}>
-            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-              <div>
-                <h3 style={{ color: "#ffffff", fontSize: "1rem", fontWeight: 700, marginBottom: "0.25rem" }}>
-                  Mode Pengembang: Simulasi Checkout Instan
-                </h3>
-                <p style={{ color: "var(--text-muted)", fontSize: "0.75rem", lineHeight: 1.4 }}>
-                  Lakukan simulasi checkout lokal offline secara instan untuk kebutuhan pengujian visualizer tanpa memerlukan transaksi gateway sungguhan.
-                </p>
-              </div>
-
-              <div className="button-container" style={{ marginTop: "0.25rem" }}>
-                <button
-                  type="button"
-                  onClick={handleBuy}
-                  className="btn-download"
-                  style={{ width: "100%", justifyContent: "center", border: "1px solid rgba(255, 255, 255, 0.1)" }}
-                  disabled={isProcessing || isMidtransProcessing || !email.includes("@")}
-                >
-                  {isProcessing ? (
-                    <>
-                      <svg
-                        style={{ animation: "spin 1s linear infinite", width: 14, height: 14, marginRight: 6 }}
-                        viewBox="0 0 24 24"
-                        fill="none"
-                      >
-                        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" style={{ opacity: 0.25 }} />
-                        <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                      </svg>
-                      <span>Menjalankan Simulasi...</span>
-                    </>
-                  ) : (
-                    <span>Generate Token Simulasi (Lokal)</span>
-                  )}
-                </button>
-              </div>
-              
-              {purchaseResult?.error && (
-                <div style={{
-                  background: "rgba(244, 63, 94, 0.08)",
-                  border: "1px solid var(--accent-red)",
-                  color: "var(--accent-red)",
-                  borderRadius: "6px",
-                  padding: "0.75rem",
-                  fontSize: "0.8rem",
-                  textAlign: "center"
-                }}>
-                  ❌ {purchaseResult.error}
-                </div>
-              )}
+          {purchaseResult?.error && (
+            <div style={{
+              background: "var(--accent-red-glow)",
+              border: "1px solid var(--accent-red)",
+              color: "var(--accent-red)",
+              borderRadius: "var(--radius-md)",
+              padding: "var(--space-3) var(--space-4)",
+              fontSize: "0.85rem",
+              textAlign: "center",
+              fontWeight: 600
+            }} role="alert">
+              ❌ {purchaseResult.error}
             </div>
-          </section>
+          )}
         </div>
       ) : (
         <section className="card" style={{
           border: "1px solid var(--accent-emerald)",
-          boxShadow: "0 0 25px rgba(16, 185, 129, 0.08)",
-          animation: "fadeIn 0.4s ease"
-        }}>
-          <div style={{ textAlign: "center", display: "flex", flexDirection: "column", gap: "1rem" }}>
+          boxShadow: "0 0 30px rgba(16, 185, 129, 0.08)",
+          animation: "fadeIn 0.5s cubic-bezier(0.16, 1, 0.3, 1)",
+          maxWidth: "600px",
+          margin: "0 auto"
+        }} aria-labelledby="success-title">
+          <div style={{ textAlign: "center", display: "flex", flexDirection: "column", gap: "1.5rem" }}>
             <div style={{
-              width: "48px",
-              height: "48px",
+              width: "56px",
+              height: "56px",
               borderRadius: "50%",
-              background: "rgba(16, 185, 129, 0.08)",
+              background: "var(--accent-emerald-glow)",
               border: "1px solid var(--accent-emerald)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               margin: "0 auto"
             }}>
-              <svg style={{ width: 22, height: 22, color: "var(--accent-emerald)" }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <svg style={{ width: 26, height: 26, color: "var(--accent-emerald)" }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                 <polyline points="20 6 9 17 4 12" />
               </svg>
             </div>
-            
+
             <div>
-              <h3 style={{ color: "#ffffff", fontSize: "1.2rem", fontWeight: 700 }}>Simulasi Pembayaran Berhasil!</h3>
-              <p style={{ color: "var(--text-muted)", fontSize: "0.82rem", marginTop: "0.25rem" }}>
-                Token lisensi aman telah di-generate dan dikirim ke <strong style={{ color: "#ffffff" }}>{email}</strong>.
+              <h2 id="success-title" style={{ color: "#ffffff", fontSize: "1.4rem", fontWeight: 800 }}>Token Berhasil Dibuat!</h2>
+              <p style={{ color: "var(--text-secondary)", fontSize: "0.9rem", marginTop: "0.25rem" }}>
+                Token lisensi aman Anda telah aktif dan salinannya dikirim ke <strong style={{ color: "#ffffff" }}>{email}</strong>.
               </p>
             </div>
 
             <div style={{
-              background: "rgba(0, 0, 0, 0.35)",
-              border: "1px solid rgba(255, 255, 255, 0.04)",
-              borderRadius: "8px",
-              padding: "1.25rem",
+              background: "rgba(0, 0, 0, 0.4)",
+              border: "1px solid var(--panel-border)",
+              borderRadius: "var(--radius-lg)",
+              padding: "1.5rem",
               margin: "0.5rem 0",
             }}>
-              <span style={{ fontSize: "0.68rem", color: "var(--text-muted)", letterSpacing: "0.06em", textTransform: "uppercase", display: "block", marginBottom: "0.5rem" }}>
+              <span style={{ fontSize: "0.7rem", color: "var(--text-muted)", letterSpacing: "0.08em", textTransform: "uppercase", display: "block", marginBottom: "0.5rem", fontWeight: 700 }}>
                 KUNCI TOKEN LISENSI ANDA
               </span>
               <div style={{
                 fontFamily: "JetBrains Mono, monospace",
-                fontSize: "1.6rem",
-                fontWeight: 700,
+                fontSize: "1.8rem",
+                fontWeight: 800,
                 color: "var(--accent-cyan)",
                 letterSpacing: "0.08em",
-                margin: "0.6rem 0"
+                margin: "0.75rem 0",
+                textShadow: "0 0 10px rgba(6, 182, 212, 0.2)"
               }}>
                 {purchaseResult.token}
               </div>
-              <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", lineHeight: 1.4 }}>
-                Simpan token ini. Token bersifat sekali pakai dan wajib dimasukkan pada form visualizer sebelum melakukan proses enkripsi AES.
+              <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                Simpan token ini baik-baik. Token bersifat sekali pakai dan wajib dimasukkan pada dashboard visualisasi sebelum melakukan proses enkripsi AES.
               </p>
             </div>
 
-            <div style={{ display: "flex", gap: "0.75rem", justifyContent: "center", marginTop: "0.25rem" }}>
+            <div style={{ display: "flex", gap: "1rem", justifyContent: "center", marginTop: "0.25rem" }}>
               <button onClick={handleCopy} className="btn-process" style={{
-                padding: "0.6rem 1.25rem",
-                fontSize: "0.85rem",
+                padding: "var(--space-2) var(--space-4)",
+                fontSize: "0.9rem",
                 background: copied ? "var(--accent-emerald)" : "#ffffff",
-                color: copied ? "#ffffff" : "#080b11",
+                color: copied ? "#ffffff" : "var(--bg-color)",
                 boxShadow: "none"
               }}>
                 {copied ? "✓ Tersalin!" : "Salin Token"}
               </button>
-              
+
               <Link href="/" className="btn-download" style={{
-                padding: "0.6rem 1.25rem",
-                fontSize: "0.85rem",
+                padding: "var(--space-2) var(--space-4)",
+                fontSize: "0.9rem",
                 display: "inline-flex",
                 alignItems: "center",
                 textDecoration: "none"
               }}>
-                Gunakan Enkripsi
+                Gunakan Token
               </Link>
             </div>
-            
-            <p style={{ fontSize: "0.72rem", color: "var(--text-muted)", borderTop: "1px solid rgba(255, 255, 255, 0.03)", paddingTop: "0.75rem", marginTop: "0.5rem" }}>
+
+            <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", borderTop: "1px solid var(--panel-border)", paddingTop: "1rem", marginTop: "0.5rem" }}>
               📧 Salinan email pengiriman tersimpan di: <code style={{ color: "var(--accent-purple)", fontFamily: "JetBrains Mono" }}>scratch/sent-emails.log</code>
             </p>
           </div>
         </section>
       )}
-
-      {/* Styles for spinner animations */}
-      <style jsx global>{`
-        @keyframes spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
     </div>
   );
 }

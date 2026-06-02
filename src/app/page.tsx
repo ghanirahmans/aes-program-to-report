@@ -33,6 +33,16 @@ function formatHexWithSpaces(hexStr: string): string {
   return bytes.join(" ").toUpperCase();
 }
 
+function getAesStateMatrix(hexStr: string): string[] {
+  const cleanHex = hexStr.replace(/[^0-9A-Fa-f]/g, "");
+  const bytes: string[] = [];
+  for (let i = 0; i < 16; i++) {
+    const byte = cleanHex.slice(i * 2, i * 2 + 2);
+    bytes.push(byte.length === 2 ? byte.toUpperCase() : "");
+  }
+  return bytes;
+}
+
 interface TerminalLine {
   text: string;
   type: "info" | "header" | "step-title" | "matrix" | "success" | "error" | "poly";
@@ -44,14 +54,14 @@ interface PlaybackItem extends TerminalLine {
 
 export default function Home() {
   const [licenseToken, setLicenseToken] = useState("");
-  
+
   // Master states containing raw text and hex values
-  const [plainText, setPlainText] = useState("KeamananInformas");
-  const [plainHex, setPlainHex] = useState(textToHex("KeamananInformas"));
+  const [plainText, setPlainText] = useState("AkuCintaKamuLhoo");
+  const [plainHex, setPlainHex] = useState(textToHex("IniKuncibuatEkri"));
   const [plainMode, setPlainMode] = useState<"text" | "hex">("text");
 
-  const [keyText, setKeyText] = useState("KunciRahasiaAES1");
-  const [keyHex, setKeyHex] = useState(textToHex("KunciRahasiaAES1"));
+  const [keyText, setKeyText] = useState("IniKuncibuatEkri");
+  const [keyHex, setKeyHex] = useState(textToHex("IniKuncibuatEkri"));
   const [keyMode, setKeyMode] = useState<"text" | "hex">("text");
 
   // Status & simulation states
@@ -60,11 +70,6 @@ export default function Home() {
   const [isFinished, setIsFinished] = useState(false);
   const [progress, setProgress] = useState(0);
   const [speedMode, setSpeedMode] = useState<"1x" | "2x" | "skip">("1x");
-
-  // Terminal lines state
-  const [terminalLines, setTerminalLines] = useState<TerminalLine[]>([
-    { text: "guest@aes-security:~$ _", type: "info" },
-  ]);
 
   // Server result state
   const [actionResult, setActionResult] = useState<AesActionResult | null>(null);
@@ -77,12 +82,16 @@ export default function Home() {
   // Terminal scroll ref
   const terminalBodyRef = useRef<HTMLDivElement>(null);
 
-  // Autoscroll terminal
+  // Render initial terminal screen line
   useEffect(() => {
-    if (terminalBodyRef.current) {
-      terminalBodyRef.current.scrollTop = terminalBodyRef.current.scrollHeight;
+    const el = terminalBodyRef.current;
+    if (el && el.childNodes.length === 0) {
+      const welcomeDiv = document.createElement("div");
+      welcomeDiv.className = "log-line log-info";
+      welcomeDiv.textContent = "user@aes-core:~$ _";
+      el.appendChild(welcomeDiv);
     }
-  }, [terminalLines]);
+  }, []);
 
   // Real-time changes handler for Plaintext
   const handlePlainInputChange = (val: string) => {
@@ -167,10 +176,24 @@ export default function Home() {
     setIsFinished(false);
     setProgress(0);
     setActionResult(null);
-    setTerminalLines([
-      { text: "guest@aes-security:~$ ./aes_encrypt_engine --input=" + plainText + " --key=" + keyText + " --token=" + licenseToken, type: "info" },
-      { text: "[SYSTEM] Memverifikasi token lisensi di database...", type: "info" },
-    ]);
+
+    // Manipulate DOM directly to clear and initialize terminal
+    const el = terminalBodyRef.current;
+    if (el) {
+      el.innerHTML = "";
+
+      const firstLine = document.createElement("div");
+      firstLine.className = "log-line log-info";
+      firstLine.textContent = "user@aes-core:~$ ./aes_cryptography_engine --input=" + plainText + " --key=" + keyText + " --token=" + licenseToken;
+      el.appendChild(firstLine);
+
+      const secondLine = document.createElement("div");
+      secondLine.className = "log-line log-info";
+      secondLine.textContent = "[SYSTEM] Memverifikasi token lisensi di database...";
+      el.appendChild(secondLine);
+
+      el.scrollTop = el.scrollHeight;
+    }
 
     // 1. Verify License Token by calling the API route
     try {
@@ -185,37 +208,59 @@ export default function Home() {
       const activateData = await activateRes.json();
 
       if (!activateRes.ok || !activateData.success) {
-        setTerminalLines((prev) => [
-          ...prev,
-          { text: `[ERROR] Gagal memverifikasi token: ${activateData.message || "Token tidak valid atau sudah digunakan!"}`, type: "error" },
-          { text: `[SYSTEM] Proses dihentikan. Silakan beli token baru.`, type: "error" },
-        ]);
+        if (el) {
+          const errLine = document.createElement("div");
+          errLine.className = "log-line log-error";
+          errLine.textContent = `[ERROR] Gagal memverifikasi token: ${activateData.message || "Token tidak valid atau sudah digunakan!"}`;
+          el.appendChild(errLine);
+
+          const stopLine = document.createElement("div");
+          stopLine.className = "log-line log-error";
+          stopLine.textContent = `[SYSTEM] Proses dihentikan. Silakan beli token baru.`;
+          el.appendChild(stopLine);
+
+          el.scrollTop = el.scrollHeight;
+        }
         setIsProcessing(false);
         return;
       }
 
-      setTerminalLines((prev) => [
-        ...prev,
-        { text: `[SUCCESS] Token terverifikasi! Status berubah menjadi USED di database secara atomic.`, type: "success" },
-        { text: `[SYSTEM] Memulai pemanggilan mesin enkripsi AES...`, type: "info" },
-      ]);
+      if (el) {
+        const okLine = document.createElement("div");
+        okLine.className = "log-line log-success";
+        okLine.textContent = `[SUCCESS] Token terverifikasi! Status berubah menjadi USED di database secara atomic.`;
+        el.appendChild(okLine);
+
+        const initLine = document.createElement("div");
+        initLine.className = "log-line log-info";
+        initLine.textContent = `[SYSTEM] Memulai pemanggilan mesin enkripsi AES...`;
+        el.appendChild(initLine);
+
+        el.scrollTop = el.scrollHeight;
+      }
     } catch (err: any) {
-      setTerminalLines((prev) => [
-        ...prev,
-        { text: `[ERROR] Kesalahan jaringan saat menghubungi server lisensi.`, type: "error" },
-      ]);
+      if (el) {
+        const netErrLine = document.createElement("div");
+        netErrLine.className = "log-line log-error";
+        netErrLine.textContent = `[ERROR] Kesalahan jaringan saat menghubungi server lisensi.`;
+        el.appendChild(netErrLine);
+        el.scrollTop = el.scrollHeight;
+      }
       setIsProcessing(false);
       return;
     }
 
     // 2. Call Next.js Server Action
-    const res = await processAes(plainText, keyText);
+    const res = await processAes(plainText, keyText, licenseToken, plainMode, keyMode);
 
     if (!res.success || !res.logs) {
-      setTerminalLines((prev) => [
-        ...prev,
-        { text: `[ERROR] Gagal memproses enkripsi AES: ${res.error || "Unknown error"}`, type: "error" },
-      ]);
+      if (el) {
+        const failLine = document.createElement("div");
+        failLine.className = "log-line log-error";
+        failLine.textContent = `[ERROR] Gagal memproses enkripsi AES: ${res.error || "Unknown error"}`;
+        el.appendChild(failLine);
+        el.scrollTop = el.scrollHeight;
+      }
       setIsProcessing(false);
       return;
     }
@@ -225,12 +270,12 @@ export default function Home() {
     // Build the logs queue
     const parsedQueue = res.logs.map(parseLogLine);
 
-    // Calculate total base delay sum to scale to exactly 10 seconds (10,000 ms)
+    // Calculate total base delay sum to scale to exactly 60 seconds (60,000 ms)
     const baseSum = parsedQueue.reduce((acc, item) => acc + item.delay, 0);
-    const targetDuration = 10000; // 10 seconds
+    const targetDuration = 60000; // 60 seconds
     const scaleFactor = targetDuration / baseSum;
 
-    // Apply the scaling factor so total duration is exactly 10s
+    // Apply the scaling factor so total duration is exactly 60s
     const scaledQueue = parsedQueue.map((item) => ({
       ...item,
       delay: Math.max(1, Math.round(item.delay * scaleFactor)),
@@ -241,12 +286,13 @@ export default function Home() {
     setIsPlaying(true);
   };
 
-  // Playback execution hook
+  // Playback execution hook using Direct DOM Manipulation to prevent React re-render overhead
   useEffect(() => {
     if (!isPlaying || playbackQueue.length === 0) return;
 
     let timerId: NodeJS.Timeout;
     let currentIndex = currentQueueIndex;
+    const el = terminalBodyRef.current;
 
     const printNextLine = () => {
       if (currentIndex >= playbackQueue.length) {
@@ -254,40 +300,86 @@ export default function Home() {
         setIsProcessing(false);
         setIsFinished(true);
         setProgress(100);
-        setTerminalLines((prev) => [
-          ...prev,
-          { text: "guest@aes-security:~$ _", type: "info" },
-        ]);
+
+        if (el) {
+          const existingCursor = el.querySelector(".cursor-blink");
+          if (existingCursor) existingCursor.remove();
+
+          const finalPrompt = document.createElement("div");
+          finalPrompt.className = "log-line log-info";
+          finalPrompt.textContent = "user@aes-core:~$ _";
+          el.appendChild(finalPrompt);
+          el.scrollTop = el.scrollHeight;
+        }
         return;
       }
 
       if (speedMode === "skip") {
-        // If skipped, dump all remaining logs instantly
         const remaining = playbackQueue.slice(currentIndex);
-        setTerminalLines((prev) => [...prev, ...remaining]);
+        if (el) {
+          const existingCursor = el.querySelector(".cursor-blink");
+          if (existingCursor) existingCursor.remove();
+
+          remaining.forEach((line) => {
+            const lineDiv = document.createElement("div");
+            let className = "log-line";
+            if (line.type === "header") className += " log-header";
+            else if (line.type === "step-title") className += " log-step-title";
+            else if (line.type === "matrix") className += " log-matrix";
+            else if (line.type === "success") className += " log-success";
+            else if (line.type === "error") className += " log-error";
+            else if (line.type === "poly") className += " log-poly";
+            lineDiv.className = className;
+            lineDiv.textContent = line.text;
+            el.appendChild(lineDiv);
+          });
+
+          const finalPrompt = document.createElement("div");
+          finalPrompt.className = "log-line log-info";
+          finalPrompt.textContent = "user@aes-core:~$ _";
+          el.appendChild(finalPrompt);
+          el.scrollTop = el.scrollHeight;
+        }
+
         setCurrentQueueIndex(playbackQueue.length);
         setIsPlaying(false);
         setIsProcessing(false);
         setIsFinished(true);
         setProgress(100);
-        setTerminalLines((prev) => [
-          ...prev,
-          { text: "guest@aes-security:~$ _", type: "info" },
-        ]);
         return;
       }
 
       const item = playbackQueue[currentIndex];
-      setTerminalLines((prev) => [...prev, item]);
 
-      // Calculate progress percentage
+      if (el) {
+        const existingCursor = el.querySelector(".cursor-blink");
+        if (existingCursor) existingCursor.remove();
+
+        const lineDiv = document.createElement("div");
+        let className = "log-line";
+        if (item.type === "header") className += " log-header";
+        else if (item.type === "step-title") className += " log-step-title";
+        else if (item.type === "matrix") className += " log-matrix";
+        else if (item.type === "success") className += " log-success";
+        else if (item.type === "error") className += " log-error";
+        else if (item.type === "poly") className += " log-poly";
+        lineDiv.className = className;
+        lineDiv.textContent = item.text;
+
+        const cursorSpan = document.createElement("span");
+        cursorSpan.className = "cursor-blink";
+        lineDiv.appendChild(cursorSpan);
+
+        el.appendChild(lineDiv);
+        el.scrollTop = el.scrollHeight;
+      }
+
       const pct = Math.min(100, Math.round(((currentIndex + 1) / playbackQueue.length) * 100));
       setProgress(pct);
 
       currentIndex += 1;
       setCurrentQueueIndex(currentIndex);
 
-      // Speed modifier
       const delay = item.delay / (speedMode === "2x" ? 2 : 1);
       timerId = setTimeout(printNextLine, delay);
     };
@@ -301,10 +393,10 @@ export default function Home() {
   const handleDownload = async (type: "pdf" | "docx" | "zip") => {
     if (!actionResult) return;
 
-    let base64 = 
-      type === "docx" ? actionResult.docxBase64 : 
-      type === "pdf" ? actionResult.pdfBase64 : 
-      actionResult.zipBase64;
+    let base64 =
+      type === "docx" ? actionResult.docxBase64 :
+        type === "pdf" ? actionResult.pdfBase64 :
+          actionResult.zipBase64;
 
     if (type === "pdf" && !base64) {
       if (!actionResult.docxBase64) {
@@ -317,7 +409,6 @@ export default function Home() {
         const res = await convertDocxToPdfAction(actionResult.docxBase64);
         if (res.success && res.pdfBase64) {
           base64 = res.pdfBase64;
-          // Cache the generated PDF base64 inside the state so next time is instant
           setActionResult((prev) => (prev ? { ...prev, pdfBase64: res.pdfBase64 } : null));
         } else {
           alert(`Gagal mengonversi ke PDF: ${res.error || "Unknown error"}`);
@@ -362,26 +453,33 @@ export default function Home() {
     URL.revokeObjectURL(url);
   };
 
+  // Derive State Matrices for real-time visualization
+  const plaintextBytes = getAesStateMatrix(plainHex);
+  const keyBytes = getAesStateMatrix(keyHex);
+
   return (
     <div className="app-container">
       {/* Header Section */}
       <header className="header">
-        <h1>AES Encryption Dashboard</h1>
+        <h1>AES-128 Encryption Dashboard</h1>
         <p>
-          Simulasikan enkripsi AES-128 secara interaktif, tinjau setiap langkah
-          matematika pada terminal, dan unduh berkas laporan dalam format PDF atau Word.
+          Simulasikan enkripsi AES-128 secara interaktif, pelajari setiap langkah perhitungan matematisnya
+          melalui terminal pengembang, dan unduh laporan komplit (.docx & .pdf) untuk tugas Anda.
         </p>
       </header>
 
-      {/* Simplified Input Form Card */}
-      <section className="card">
+      {/* Main Redesigned Form Card */}
+      <section className="card" aria-labelledby="form-card-title">
+        <h2 id="form-card-title" style={{ display: "none" }}>Konfigurasi Masukan AES</h2>
         <div className="form-grid">
           {/* Plaintext Input Group */}
           <div className="input-group">
             <div className="label-row">
-              <span className="label-text">Plaintext Block</span>
-              <div className="toggle-tab-container">
+              <span className="label-text">Plaintext State Block</span>
+              <div className="toggle-tab-container" role="tablist" aria-label="Format Plaintext">
                 <button
+                  role="tab"
+                  aria-selected={plainMode === "text"}
                   className={`toggle-tab ${plainMode === "text" ? "active" : ""}`}
                   onClick={() => setPlainMode("text")}
                   disabled={isProcessing}
@@ -389,6 +487,8 @@ export default function Home() {
                   Teks ASCII
                 </button>
                 <button
+                  role="tab"
+                  aria-selected={plainMode === "hex"}
                   className={`toggle-tab ${plainMode === "hex" ? "active" : ""}`}
                   onClick={() => setPlainMode("hex")}
                   disabled={isProcessing}
@@ -404,32 +504,54 @@ export default function Home() {
                 className="input-field"
                 placeholder={
                   plainMode === "text"
-                    ? "Masukkan maksimal 16 karakter teks..."
-                    : "Masukkan 32 digit heksadesimal..."
+                    ? "Maksimal 16 karakter..."
+                    : "32 digit heksadesimal..."
                 }
                 value={plainMode === "text" ? plainText : plainHex}
                 onChange={(e) => handlePlainInputChange(e.target.value)}
                 disabled={isProcessing}
+                aria-label="Plaintext Input"
               />
             </div>
 
-            <div className="preview-row">
+            <div className="preview-row" aria-live="polite">
               <span className="preview-label">
-                {plainMode === "text" ? "FORMAT HEX:" : "FORMAT TEKS:"}
+                {plainMode === "text" ? "HEXOUT:" : "ASCII:"}
               </span>
               <span>
                 {plainMode === "text"
                   ? formatHexWithSpaces(plainHex) || "-"
-                  : plainText || "(Teks tidak valid/kosong)"}
+                  : plainText || "(Format heksadesimal kosong)"}
               </span>
             </div>
 
-            <div className="label-row" style={{ marginTop: "-0.2rem" }}>
-              <span className="status-badge" style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                Konversi otomatis dalam 16-byte block.
+            {/* Real-time 4x4 State Grid Visualizer */}
+            <div>
+              <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--text-secondary)", display: "block", marginBottom: "4px" }}>
+                Visualisasi Matriks State AES (Column-Major Order):
               </span>
-              <span className={`status-badge ${isPlaintextValid ? "valid" : "invalid"}`}>
-                {isPlaintextValid ? "✔ 16 Byte" : `${plainBytesCount} / 16 Byte`}
+              <div className="matrix-visualizer">
+                {Array.from({ length: 16 }).map((_, idx) => {
+                  const row = Math.floor(idx / 4);
+                  const col = idx % 4;
+                  const cellIdx = col * 4 + row;
+                  const byteVal = plaintextBytes[cellIdx];
+                  return (
+                    <div key={idx} className={`matrix-cell ${byteVal ? "filled" : ""}`}>
+                      {byteVal || "--"}
+                      <span className="matrix-cell-index">s[{row},{col}]</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="label-row" style={{ marginTop: "2px" }}>
+              <span className="status-badge" style={{ fontSize: "0.75rem" }}>
+                Auto-convert ke 16-byte block.
+              </span>
+              <span className={`status-badge ${isPlaintextValid ? "valid" : "invalid"}`} aria-live="polite">
+                {isPlaintextValid ? "✔ Valid (16 Byte)" : `${plainBytesCount} / 16 Byte`}
               </span>
             </div>
           </div>
@@ -438,8 +560,10 @@ export default function Home() {
           <div className="input-group">
             <div className="label-row">
               <span className="label-text">Cipher Key (128-bit)</span>
-              <div className="toggle-tab-container">
+              <div className="toggle-tab-container" role="tablist" aria-label="Format Cipher Key">
                 <button
+                  role="tab"
+                  aria-selected={keyMode === "text"}
                   className={`toggle-tab ${keyMode === "text" ? "active" : ""}`}
                   onClick={() => setKeyMode("text")}
                   disabled={isProcessing}
@@ -447,6 +571,8 @@ export default function Home() {
                   Teks ASCII
                 </button>
                 <button
+                  role="tab"
+                  aria-selected={keyMode === "hex"}
                   className={`toggle-tab ${keyMode === "hex" ? "active" : ""}`}
                   onClick={() => setKeyMode("hex")}
                   disabled={isProcessing}
@@ -462,42 +588,70 @@ export default function Home() {
                 className="input-field"
                 placeholder={
                   keyMode === "text"
-                    ? "Masukkan maksimal 16 karakter kunci..."
-                    : "Masukkan 32 digit heksadesimal..."
+                    ? "Maksimal 16 karakter..."
+                    : "32 digit heksadesimal..."
                 }
                 value={keyMode === "text" ? keyText : keyHex}
                 onChange={(e) => handleKeyInputChange(e.target.value)}
                 disabled={isProcessing}
+                aria-label="Cipher Key Input"
               />
             </div>
 
-            <div className="preview-row">
+            <div className="preview-row" aria-live="polite">
               <span className="preview-label">
-                {keyMode === "text" ? "FORMAT HEX:" : "FORMAT TEKS:"}
+                {keyMode === "text" ? "HEXOUT:" : "ASCII:"}
               </span>
               <span>
                 {keyMode === "text"
                   ? formatHexWithSpaces(keyHex) || "-"
-                  : keyText || "(Teks tidak valid/kosong)"}
+                  : keyText || "(Format heksadesimal kosong)"}
               </span>
             </div>
 
-            <div className="label-row" style={{ marginTop: "-0.2rem" }}>
-              <span className="status-badge" style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                Kunci kriptografi 16 byte.
+            {/* Real-time 4x4 State Grid Visualizer */}
+            <div>
+              <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--text-secondary)", display: "block", marginBottom: "4px" }}>
+                Visualisasi Matriks State Kunci (Column-Major Order):
               </span>
-              <span className={`status-badge ${isKeyValid ? "valid" : "invalid"}`}>
-                {isKeyValid ? "✔ 16 Byte" : `${keyBytesCount} / 16 Byte`}
+              <div className="matrix-visualizer">
+                {Array.from({ length: 16 }).map((_, idx) => {
+                  const row = Math.floor(idx / 4);
+                  const col = idx % 4;
+                  const cellIdx = col * 4 + row;
+                  const byteVal = keyBytes[cellIdx];
+                  return (
+                    <div key={idx} className={`matrix-cell ${byteVal ? "active-key" : ""}`}>
+                      {byteVal || "--"}
+                      <span className="matrix-cell-index">w[{row},{col}]</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="label-row" style={{ marginTop: "2px" }}>
+              <span className="status-badge" style={{ fontSize: "0.75rem" }}>
+                Cipher key standard 128-bit.
+              </span>
+              <span className={`status-badge ${isKeyValid ? "valid" : "invalid"}`} aria-live="polite">
+                {isKeyValid ? "✔ Valid (16 Byte)" : `${keyBytesCount} / 16 Byte`}
               </span>
             </div>
           </div>
 
           {/* License Token Input Group */}
-          <div className="input-group" style={{ gridColumn: "1 / -1", borderTop: "1px dashed rgba(255, 255, 255, 0.05)", paddingTop: "1.25rem" }}>
+          <div className="input-group" style={{ gridColumn: "1 / -1", borderTop: "1px dashed var(--panel-border)", paddingTop: "1.5rem" }}>
             <div className="label-row">
-              <span className="label-text" style={{ color: "var(--accent-cyan)" }}>Token Lisensi Kriptografi (Sekali Pakai)</span>
+              <span className="label-text" style={{ color: "var(--accent-cyan)", display: "inline-flex", alignItems: "center", gap: "6px" }}>
+                <svg style={{ width: 16, height: 16 }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                </svg>
+                Token Lisensi Keamanan (Sekali Pakai)
+              </span>
               <span className="status-badge">
-                <Link href="/buy-token" style={{ color: "var(--accent-purple)", textDecoration: "none", fontWeight: 600 }}>
+                <Link href="/buy-token" style={{ color: "var(--accent-purple)", textDecoration: "none", fontWeight: 700 }}>
                   Belum punya token? Beli di sini &rarr;
                 </Link>
               </span>
@@ -511,13 +665,14 @@ export default function Home() {
                 value={licenseToken}
                 onChange={(e) => setLicenseToken(e.target.value.toUpperCase().trim())}
                 disabled={isProcessing}
+                aria-label="Crypto License Token"
               />
             </div>
             <div className="label-row" style={{ marginTop: "-0.2rem" }}>
-              <span className="status-badge" style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                Satu token hanya dapat digunakan untuk memproses satu kali enkripsi.
+              <span className="status-badge" style={{ fontSize: "0.75rem" }}>
+                Token ditandai sebagai USED di database secara atomic pasca ekripsi.
               </span>
-              <span className={`status-badge ${isTokenFormatValid ? "valid" : "invalid"}`}>
+              <span className={`status-badge ${isTokenFormatValid ? "valid" : "invalid"}`} aria-live="polite">
                 {isTokenFormatValid ? "✔ Format Valid" : `${licenseToken.length} / 16 Karakter`}
               </span>
             </div>
@@ -534,7 +689,7 @@ export default function Home() {
             {isProcessing ? (
               <>
                 <svg
-                  style={{ animation: "spin 1s linear infinite", width: 16, height: 16 }}
+                  style={{ animation: "spin 1s linear infinite", width: 18, height: 18 }}
                   viewBox="0 0 24 24"
                   fill="none"
                 >
@@ -551,84 +706,74 @@ export default function Home() {
                     d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                   />
                 </svg>
-                <span>Memproses AES...</span>
+                <span>Memproses Mesin AES...</span>
               </>
             ) : (
-              <span>Proses Enkripsi</span>
+              <>
+                <svg style={{ width: 18, height: 18 }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+                </svg>
+                <span>Proses Enkripsi</span>
+              </>
             )}
           </button>
         </div>
       </section>
 
       {/* Terminal Simulator Card */}
-      <section className="terminal-window">
+      <section className={`terminal-window ${isPlaying ? "active" : ""}`} aria-labelledby="terminal-title-text">
         {/* Terminal Header */}
         <div className="terminal-header">
           <div className="terminal-buttons">
-            <span className="terminal-btn"></span>
-            <span className="terminal-btn"></span>
-            <span className="terminal-btn"></span>
+            <span className="terminal-btn close" />
+            <span className="terminal-btn minimize" />
+            <span className="terminal-btn maximize" />
           </div>
-          <div className="terminal-title">aes-simulation-terminal</div>
+          <div id="terminal-title-text" className="terminal-title">aes-simulation-terminal</div>
           <div className="terminal-controls">
             <button
               className={`speed-badge ${speedMode === "1x" ? "active" : ""}`}
               onClick={() => setSpeedMode("1x")}
+              aria-label="Kecepatan 1x"
             >
               1X SPEED
             </button>
             <button
               className={`speed-badge ${speedMode === "2x" ? "active" : ""}`}
               onClick={() => setSpeedMode("2x")}
+              aria-label="Kecepatan 2x"
             >
               2X SPEED
             </button>
             <button
               className={`speed-badge ${speedMode === "skip" ? "active" : ""}`}
               onClick={() => setSpeedMode("skip")}
+              aria-label="Lewati Animasi"
             >
               SKIP
             </button>
           </div>
         </div>
 
-        {/* Terminal Text Screen */}
-        <div className="terminal-body" ref={terminalBodyRef}>
-          {terminalLines.map((line, idx) => {
-            let className = "log-line";
-            if (line.type === "header") className += " log-header";
-            else if (line.type === "step-title") className += " log-step-title";
-            else if (line.type === "matrix") className += " log-matrix";
-            else if (line.type === "success") className += " log-success";
-            else if (line.type === "error") className += " log-error";
-            else if (line.type === "poly") className += " log-poly";
-            else if (idx === 0) className += " log-welcome";
-
-            return (
-              <div key={idx} className={className}>
-                {line.text}
-                {idx === terminalLines.length - 1 && isPlaying && <span className="cursor-blink" />}
-              </div>
-            );
-          })}
-        </div>
+        {/* Terminal Text Screen (Uncontrolled DOM container) */}
+        <div className="terminal-body" ref={terminalBodyRef} aria-live="assertive" />
 
         {/* Terminal Thin Status Bar */}
         <div className="terminal-status-bar">
           <div className="progress-container">
-            <span>PROGRES:</span>
+            <span>PROGRESS:</span>
             <div className="progress-bar-bg">
               <div className="progress-bar-fill" style={{ width: `${progress}%` }}></div>
             </div>
             <span>{progress}%</span>
           </div>
           <div>
-            <span>
+            <span style={{ fontWeight: 700 }}>
               {isFinished
-                ? "SELESAI"
+                ? "SIMULATION COMPLETED"
                 : isPlaying
-                  ? `RUNNING (${speedMode === "1x" ? "10s" : speedMode === "2x" ? "5s" : "INSTANT"})`
-                  : "READY"}
+                  ? `RUNNING (${speedMode === "1x" ? "60s" : speedMode === "2x" ? "30s" : "INSTANT"})`
+                  : "ENGINE STANDBY"}
             </span>
           </div>
         </div>
@@ -636,10 +781,10 @@ export default function Home() {
 
       {/* Clean PDF & Word Report Downloads Box */}
       {isFinished && actionResult?.success && (
-        <section className="card download-section">
-          <div className="download-title">
+        <section className="card download-section" aria-labelledby="download-card-title">
+          <div id="download-card-title" className="download-title">
             <svg
-              style={{ width: 20, height: 20 }}
+              style={{ width: 24, height: 24, color: "var(--accent-emerald)" }}
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -648,24 +793,25 @@ export default function Home() {
               <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
               <polyline points="22 4 12 14.01 9 11.01" />
             </svg>
-            <span>Enkripsi Selesai & Laporan Berhasil Dibuat!</span>
+            <span>Enkripsi Sukses! Laporan Akademik Siap Diunduh</span>
           </div>
 
-          <div style={{ textAlign: "center" }}>
-            <p style={{ fontSize: "0.9rem", color: "var(--text-main)", marginBottom: "0.25rem" }}>
-              Ciphertext Hasil (Heks):{" "}
-              <code style={{ color: "var(--accent-cyan)", background: "rgba(6, 182, 212, 0.08)", padding: "0.15rem 0.5rem", borderRadius: "4px", fontFamily: "JetBrains Mono, monospace" }}>
+          <div style={{ textAlign: "center", maxWidth: "600px" }}>
+            <p style={{ fontSize: "0.95rem", color: "var(--text-secondary)", marginBottom: "0.75rem" }}>
+              Ciphertext Hasil (Heksadesimal):{" "}
+              <code style={{ color: "var(--accent-cyan)", background: "rgba(6, 182, 212, 0.08)", padding: "0.25rem 0.65rem", borderRadius: "6px", fontFamily: "JetBrains Mono, monospace", fontWeight: 700, fontSize: "0.95rem", border: "1px solid var(--accent-cyan-border)" }}>
                 {actionResult.cipherHex?.toUpperCase()}
               </code>
             </p>
-            <p style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
-              Unduh langkah pengerjaan komplit untuk tugas Keamanan Informasi Anda:
+            <p style={{ fontSize: "0.85rem", color: "var(--text-muted)", lineHeight: 1.5 }}>
+              Kami telah merangkum semua visualisasi langkah perhitungan matriks, SubBytes, ShiftRows, MixColumns, dan
+              Key Expansion ke dalam dokumen resmi untuk kebutuhan tugas Keamanan Informasi Anda:
             </p>
           </div>
 
           <div className="download-buttons">
             <button className="btn-download docx" onClick={() => handleDownload("docx")}>
-              <svg style={{ width: 15, height: 15 }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg style={{ width: 18, height: 18 }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                 <polyline points="14 2 14 8 20 8" />
                 <line x1="16" y1="13" x2="8" y2="13" />
@@ -677,7 +823,7 @@ export default function Home() {
               {isGeneratingPdf ? (
                 <>
                   <svg
-                    style={{ animation: "spin 1s linear infinite", width: 15, height: 15, marginRight: 6 }}
+                    style={{ animation: "spin 1s linear infinite", width: 18, height: 18, marginRight: 6 }}
                     viewBox="0 0 24 24"
                     fill="none"
                   >
@@ -694,11 +840,11 @@ export default function Home() {
                       d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                     />
                   </svg>
-                  <span>Membuat PDF...</span>
+                  <span>Mengekspor PDF...</span>
                 </>
               ) : (
                 <>
-                  <svg style={{ width: 15, height: 15 }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg style={{ width: 18, height: 18 }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                     <polyline points="14 2 14 8 20 8" />
                     <line x1="16" y1="13" x2="8" y2="13" />
@@ -709,12 +855,12 @@ export default function Home() {
               )}
             </button>
             <button className="btn-download zip" onClick={() => handleDownload("zip")}>
-              <svg style={{ width: 15, height: 15 }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg style={{ width: 18, height: 18 }} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
                 <path d="M12 11v6" />
                 <path d="m9 14 3 3 3-3" />
               </svg>
-              <span>Arsip ZIP (.zip)</span>
+              <span>Arsip Lengkap (.zip)</span>
             </button>
           </div>
         </section>
@@ -722,20 +868,8 @@ export default function Home() {
 
       {/* Minimal Footer */}
       <footer className="footer">
-        <p>&copy; {new Date().getFullYear()} AES Keamanan Informasi Platform - GhaniRahmans</p>
+        <p>&copy; {new Date().getFullYear()} AES Visual - Tugas Kuliah - GhaniRahmans</p>
       </footer>
-
-      {/* Embedded Spinner CSS */}
-      <style jsx global>{`
-        @keyframes spin {
-          from {
-            transform: rotate(0deg);
-          }
-          to {
-            transform: rotate(360deg);
-          }
-        }
-      `}</style>
     </div>
   );
 }

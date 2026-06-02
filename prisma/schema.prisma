@@ -28,3 +28,17 @@ enum LicenseStatus {
   EXPIRED
   REVOKED
 }
+
+model EncryptionHistory {
+  id         String   @id @default(cuid())
+  email      String
+  plaintext  String
+  key        String
+  plainMode  String
+  keyMode    String
+  cipherHex  String
+  tokenUsed  String
+  createdAt  DateTime @default(now())
+
+  @@map("encryption_histories")
+}

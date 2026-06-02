@@ -16,10 +16,12 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <div className="navbar-container">
             <Link href="/" className="navbar-brand">
               <span className="brand-dot"></span>
-              AES Keamanan Informasi
+              AESVisual
             </Link>
             <div className="navbar-links">
               <Link href="/" className="nav-link">Dashboard</Link>
+              <Link href="/learn" className="nav-link">Belajar AES (Gratis)</Link>
+              <Link href="/history" className="nav-link">Riwayat Laporan</Link>
               <Link href="/buy-token" className="nav-link nav-link-highlight">Beli Token</Link>
             </div>
           </div>

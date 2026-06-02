@@ -10,6 +10,8 @@ import { prisma } from "@/lib/prisma";
 import { headers } from "next/headers";
 import AdmZip from "adm-zip";
 
+import { hashToken } from "@/lib/hash";
+
 export interface AesActionResult {
   success: boolean;
   logs?: string[];
@@ -21,7 +23,13 @@ export interface AesActionResult {
   error?: string;
 }
 
-export async function processAes(plaintext: string, key: string): Promise<AesActionResult> {
+export async function processAes(
+  plaintext: string,
+  key: string,
+  licenseToken?: string,
+  plainMode: string = "text",
+  keyMode: string = "text"
+): Promise<AesActionResult> {
   const logs: string[] = [];
   const logger = (line: string) => {
     logs.push(line);
@@ -73,6 +81,33 @@ export async function processAes(plaintext: string, key: string): Promise<AesAct
       zipBase64 = zipBuf.toString("base64");
     } catch (zipErr) {
       console.error("Gagal membuat arsip ZIP:", zipErr);
+    }
+
+    // Save metadata to EncryptionHistory if licenseToken is present
+    if (licenseToken && result.cipherHex) {
+      try {
+        const computedHash = hashToken(licenseToken.trim().toUpperCase());
+        const license = await prisma.license.findUnique({
+          where: { tokenHash: computedHash }
+        });
+        if (license) {
+          const decodedEmail = decodeURIComponent(license.email);
+          await (prisma as any).encryptionHistory.create({
+            data: {
+              email: decodedEmail,
+              plaintext,
+              key,
+              plainMode,
+              keyMode,
+              cipherHex: result.cipherHex,
+              tokenUsed: licenseToken.trim().toUpperCase(),
+            }
+          });
+          console.log(`[History] Saved encryption history for ${decodedEmail}`);
+        }
+      } catch (historyErr) {
+        console.error("Gagal menyimpan riwayat enkripsi:", historyErr);
+      }
     }
 
     // Clean up temporary workspace immediately
@@ -190,7 +225,7 @@ export async function verifyMidtransPayment(orderId: string, queryEmail?: string
       return {
         success: true,
         alreadyProcessed: true,
-        email: existing.email,
+        email: decodeURIComponent(existing.email),
       };
     }
 
@@ -220,10 +255,12 @@ export async function verifyMidtransPayment(orderId: string, queryEmail?: string
 
     if (successStatuses.includes(data.transaction_status)) {
       // Payment is settled! Let's generate the token on the spot
-      const email = data.customer_details?.email || queryEmail || "";
-      if (!email) {
+      const rawEmail = data.customer_details?.email || queryEmail || "";
+      if (!rawEmail) {
         return { success: false, error: "Email pembeli tidak ditemukan di detail transaksi Midtrans maupun di parameter URL." };
       }
+
+      const email = decodeURIComponent(rawEmail);
 
       // Generate the token securely (inserts hash in DB + emails raw token to customer!)
       const rawToken = await createLicenseAfterPayment({
@@ -254,8 +291,9 @@ export async function verifyMidtransPayment(orderId: string, queryEmail?: string
 
 export async function createMidtransTransaction(email: string): Promise<{ success: boolean; redirectUrl?: string; error?: string }> {
   try {
-    if (!email || !email.includes("@") || email.length < 5) {
-      return { success: false, error: "Masukkan email yang valid." };
+    const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+    if (!email || !EMAIL_REGEX.test(email)) {
+      return { success: false, error: "Silakan masukkan alamat email dengan format yang benar (contoh: nama@domain.com)." };
     }
 
     const serverKey = process.env.MIDTRANS_SERVER_KEY;
@@ -282,7 +320,7 @@ export async function createMidtransTransaction(email: string): Promise<{ succes
     const payload = {
       transaction_details: {
         order_id: orderId,
-        gross_amount: 15000, // Rp 15.000 for 1 token
+        gross_amount: 82000, // Rp 82.000 for 1 token
       },
       customer_details: {
         email: email,
@@ -311,6 +349,11 @@ export async function createMidtransTransaction(email: string): Promise<{ succes
     if (!response.ok) {
       const errText = await response.text();
       console.error("[Midtrans Snap Error]", errText);
+      
+      if (errText.includes("customer_details.email") || errText.includes("format is invalid")) {
+        return { success: false, error: "Format email tidak diterima oleh sistem pembayaran. Silakan gunakan format email yang valid (seperti nama@domain.com)." };
+      }
+      
       return { success: false, error: "Gagal membuat sesi pembayaran dengan Midtrans." };
     }
 
@@ -329,5 +372,63 @@ export async function createMidtransTransaction(email: string): Promise<{ succes
       success: false,
       error: error.message || "Terjadi kesalahan sistem saat menghubungi payment gateway."
     };
+  }
+}
+
+export interface HistoryRecord {
+  id: string;
+  email: string;
+  plaintext: string;
+  key: string;
+  plainMode: string;
+  keyMode: string;
+  cipherHex: string;
+  tokenUsed: string;
+  createdAt: string; // Di-serialize sebagai string ISO agar kompatibel dengan Client Component
+}
+
+export async function getEncryptionHistory(
+  email: string,
+  token: string
+): Promise<{ success: boolean; history?: HistoryRecord[]; error?: string }> {
+  try {
+    if (!email || !token) {
+      return { success: false, error: "Email dan Token wajib diisi." };
+    }
+
+    const computedHash = hashToken(token.trim().toUpperCase());
+    const license = await prisma.license.findUnique({
+      where: { tokenHash: computedHash },
+    });
+
+    if (!license) {
+      return { success: false, error: "Email atau Kunci Token tidak valid." };
+    }
+
+    // Melakukan decoding URL-encoded email (misal %40 -> @) untuk perbandingan yang super kokoh
+    const decodedLicenseEmail = decodeURIComponent(license.email).trim().toLowerCase();
+    const decodedInputEmail = decodeURIComponent(email).trim().toLowerCase();
+
+    if (decodedLicenseEmail !== decodedInputEmail) {
+      return { success: false, error: "Email atau Kunci Token tidak valid." };
+    }
+
+    const history = await (prisma as any).encryptionHistory.findMany({
+      where: { tokenUsed: token.trim().toUpperCase() },
+      orderBy: { createdAt: "desc" },
+    });
+
+    // Melakukan serialisasi Date ke String ISO
+    const serializedHistory = history.map((record: any) => ({
+      ...record,
+      createdAt: record.createdAt.toISOString(),
+    }));
+
+    return {
+      success: true,
+      history: serializedHistory,
+    };
+  } catch (err: any) {
+    return { success: false, error: err.message || "Gagal mengambil riwayat enkripsi." };
   }
 }
